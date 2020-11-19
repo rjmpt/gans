@@ -1,2 +1,1 @@
-# gans
-671 final project code
+671 final project
