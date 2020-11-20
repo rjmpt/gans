@@ -1,3 +1,5 @@
+#This file is a helper which returns various architecture definitions depending on the input image size
+
 import helper 
 import tensorflow as tf
 if tf.__version__ == '1.14.0':
@@ -6,9 +8,8 @@ if tf.__version__ == '1.14.0':
 else:
     tf_compat_v1 = tf
 
-
+#All DCGAN architectures: https://arxiv.org/pdf/1511.06434.pdf
 def get_dcgan_architectures(type='Generator', image_size=[28, 28], n_out_channels=1):
-    # https://arxiv.org/pdf/1511.06434.pdf
     if type == 'Generator' and image_size == [28, 28]:
         return [
                 (['input_node'], 'layer_1', 'TransposedConvolution', {'n_out_channels': 1024, 'kernel_shape': [4, 4], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': False, 'initializer_mode': 'gaussian', 'force_no_matmul': False}),
@@ -117,10 +118,8 @@ def get_dcgan_architectures(type='Generator', image_size=[28, 28], n_out_channel
                ]
 
 
-
-#this removes batchnorm from critic
+#this removes batchnorm from critic as specified in wGAN-GP: https://arxiv.org/pdf/1704.00028.pdf
 def get_dcgan_architectures_wgan(type='Generator', image_size=[28, 28], n_out_channels=1):
-    # https://arxiv.org/pdf/1511.06434.pdf
     if type == 'Generator' and image_size == [28, 28]:
         return [
                 (['input_node'], 'layer_1', 'TransposedConvolution', {'n_out_channels': 1024, 'kernel_shape': [4, 4], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': False, 'initializer_mode': 'gaussian', 'force_no_matmul': False}),
@@ -213,13 +212,3 @@ def get_dcgan_architectures_wgan(type='Generator', image_size=[28, 28], n_out_ch
                 (['layer_8'], 'layer_9', 'ElementwiseApply', {'func': helper.LeakyReLU}),
                 (['layer_9'], 'layer_10', 'Convolution', {'n_out_channels': 1, 'kernel_shape': [5, 5], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': True, 'initializer_mode': 'gaussian', 'force_no_matmul': False}),
                ]
-
-
-
-
-
-
-
-
-
-
