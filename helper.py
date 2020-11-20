@@ -1,3 +1,4 @@
+#helper file, contains utility functions
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
@@ -26,6 +27,7 @@ else:
 
 import optimization
 
+#create experiment directory
 def make_exp_dir(global_args):
     random_code = str(uuid.uuid4().hex)
     exp_dir = global_args.main_experiments_dir + global_args.experiment_group + '/' + \
@@ -37,6 +39,7 @@ def make_exp_dir(global_args):
         os.makedirs(exp_dir)
     return exp_dir
 
+#return the appropriate model object + hyperparameters
 def get_model_and_algorithm_optimization_args(algorithm_name):
     from Algorithms import get_algorithm
 
@@ -50,6 +53,7 @@ def get_model_and_algorithm_optimization_args(algorithm_name):
     algorithm_args, optimization_args = get_algorithm(algorithm_name)
     return Model, algorithm_args, optimization_args 
 
+#used to read experiment results from .txt records and help produce visualizations
 def read_data_text(data_file_path):
     with open(data_file_path, 'r') as file: line_list = file.readlines()
     
@@ -64,6 +68,7 @@ def read_data_text(data_file_path):
 
     return variables_desc_str_list, variables_desc_dicts, temporal_desc_str_list, value_lines_split_value, value_lines_split_temporal
 
+#writes ongoing experiment results to .txt records for future visualizations
 def write_data_text(data_file_path, temporal_dict, data_combinations):
     ordered_temporal_keys = sorted(temporal_dict.keys())
     temporal_values = []
@@ -92,6 +97,7 @@ def write_data_text(data_file_path, temporal_dict, data_combinations):
     with open(data_file_path, 'a') as file: file.write(overall_str)
 
 
+#obtains the data loader for the dataset being used in the experiment
 def get_data_loader(global_args):
     #########################  MNIST  #######################################
 
@@ -109,6 +115,7 @@ def get_data_loader(global_args):
     data_loader = DataLoader(batch_size=global_args.algorithm_args.batch_size*len(global_args.list_of_device_names))
     return data_loader
 
+#assigns parameter groups to devices when doing multi device optimizations
 def assign_to_device(device_name, parameter_device_name=None, parameter_op_names=['VarHandleOp', 'VarIsInitializedOp'], verbose=False):
     if parameter_device_name is None: parameter_device_name = device_name
     def _assign(op):        
@@ -120,39 +127,8 @@ def assign_to_device(device_name, parameter_device_name=None, parameter_op_names
         else: return device_name
     return _assign
 
-def rejection_sampling_tf(reweighting, max_weight):    
-    z_sample = tf.random_uniform(tf.shape(reweighting), 0, max_weight, dtype=tf.float32)
-    accept_reject_mask = tf.stop_gradient(tf.cast(z_sample < reweighting, tf.float32))
-    return accept_reject_mask
-
-def multiply_fractions(curr_relation, update_relation):
-    a, b, c, d = curr_relation
-    e, f, g, h = update_relation
-    # (e/f)*( (a/b) *x +(c/d) )+(g/h) = ((ea)/(fb))*x+ ( (ec)/(fd) + (g/h)  ) = ((ea)/(fb))*x + ((ech+fdg)/(fdh))
-    # = ((ea/gcd(ea, fb))/(fb/gcd(ea, fb))) * x + (( (ech+fdg)/gcd(ech+fdg, fdh) )/( fdh/gcd(ech+fdg, fdh) ))
-    # f([a,b,c,d], [e,f,g,h]) = [ea, fb, ech+fdg, fdh] = [ea/gcd(ea, fb), fb/gcd(ea, fb), (ech+fdg)/gcd(ech+fdg, fdh), fdh/gcd(ech+fdg, fdh)]
-    # return (e*a)/fractions.gcd(e*a, f*b), (f*b)/fractions.gcd(e*a, f*b), (e*c*h+f*d*g)/fractions.gcd(e*c*h+f*d*g, f*d*h), (f*d*h)/fractions.gcd(e*c*h+f*d*g, f*d*h)
-    return (e*a), (f*b), (e*c*h+f*d*g), (f*d*h)
-
-def safe_tf_sqrt(x, clip_value=1e-5):
-    return tf.sqrt(tf.clip_by_value(x, clip_value, np.inf))
-
-def tf_nn_upsample_tensor(x, upsample_rate=[2, 2]):
-    input_shape = []
-    for i, e in enumerate(x.get_shape().as_list()):
-        if e is not None: 
-            input_shape.append(e)
-        else:
-            input_shape.append(tf.shape(x)[i])
-    
-    intermediate_shape = [input_shape[0], input_shape[1]*upsample_rate[0], input_shape[2], input_shape[3]]
-    output_shape = [input_shape[0], input_shape[1]*upsample_rate[0], input_shape[2]*upsample_rate[1], input_shape[3]]
-    
-    x = tf.reshape(tf.concat([x[:, :, np.newaxis, :, :]]*upsample_rate[0], axis=2), intermediate_shape)
-    return tf.reshape(tf.concat([x[:, :, :, np.newaxis, :]]*upsample_rate[1], axis=3), output_shape)
-
+#aggregate device names
 def get_device_names(gpu_ID_list):
-
     if len(gpu_ID_list) > 0: 
         parameter_device_name = '/gpu:'+gpu_ID_list[0]
         list_of_device_names = ['/gpu:'+str(e) for e in gpu_ID_list]
@@ -171,6 +147,7 @@ def get_device_names(gpu_ID_list):
 
     return parameter_device_name, list_of_device_names
 
+#look for tagged variables in a given optimization iteration
 def filter_tag_vars(tag_list):
     all_vars = tf_compat_v1.trainable_variables()
 
@@ -191,6 +168,7 @@ def filter_tag_vars(tag_list):
 
     return filtered_var_list
 
+#save model state in a checkpoint
 def save_checkpoint(saver, sess, global_args, global_step, checkpoint_exp_dir, save_meta_graph=True):
     if not os.path.exists(checkpoint_exp_dir+'checkpoint/'): os.makedirs(checkpoint_exp_dir+'checkpoint/')
     saver.save(sess, checkpoint_exp_dir+'checkpoint/model', global_step=global_step)
@@ -198,6 +176,7 @@ def save_checkpoint(saver, sess, global_args, global_step, checkpoint_exp_dir, s
         saver.export_meta_graph(checkpoint_exp_dir+'checkpoint/model.meta')
     save_specs_files(checkpoint_exp_dir, global_args) # rewrite the Spec.txt
 
+#load old model checkpoint to restart training or begin model inference
 def load_checkpoint(saver, sess, checkpoint_exp_dir, load_meta_graph=True):
     if saver is None or load_meta_graph: 
         saver = tf.train.import_meta_graph(checkpoint_exp_dir+'checkpoint/model.meta')
@@ -205,10 +184,11 @@ def load_checkpoint(saver, sess, checkpoint_exp_dir, load_meta_graph=True):
     checkpoint_epoch, checkpoint_global_args = load_specs_files(checkpoint_exp_dir)
     return checkpoint_epoch, checkpoint_global_args
 
+#store all hyperparam details and current epoch/global step in a spec.txt file
 def save_specs_files(checkpoint_exp_dir, global_args):
     global_args_copy = copy.deepcopy(global_args)
 
-    #will obviously need to improve this
+    #will need to improve this
     del global_args_copy.algorithm_args
     
     args_str = repr(global_args_copy)
@@ -216,6 +196,7 @@ def save_specs_files(checkpoint_exp_dir, global_args):
     f.write(args_str)
     f.close()
 
+#load all hyperparam details and current epoch/global step from a spec.txt file 
 def load_specs_files(checkpoint_exp_dir):
     from argparse import Namespace
     f = open(checkpoint_exp_dir + 'specs.txt', 'r')
@@ -224,12 +205,38 @@ def load_specs_files(checkpoint_exp_dir):
     checkpoint_global_args = eval(s)
     return checkpoint_global_args.temporal_dict['epoch'], checkpoint_global_args
 
+#fraction algebra utility
+def multiply_fractions(curr_relation, update_relation):
+    a, b, c, d = curr_relation
+    e, f, g, h = update_relation
+    return (e*a), (f*b), (e*c*h+f*d*g), (f*d*h)
+
+#ensures finite square root
+def safe_tf_sqrt(x, clip_value=1e-5):
+    return tf.sqrt(tf.clip_by_value(x, clip_value, np.inf))
+
+#ensures no NANs
 def tf_safe_log(x, smoothing_param=1e-8, mode='Clip'):
     assert (mode == 'Clip' or mode == 'Add')
     if mode == 'Clip':
         return tf.math.log(tf.clip_by_value(x, smoothing_param, np.inf))
     elif mode == 'Add':
         return tf.math.log(x+smoothing_param)
+
+#utility funcs used in various parts of DNN.py
+def tf_nn_upsample_tensor(x, upsample_rate=[2, 2]):
+    input_shape = []
+    for i, e in enumerate(x.get_shape().as_list()):
+        if e is not None: 
+            input_shape.append(e)
+        else:
+            input_shape.append(tf.shape(x)[i])
+    
+    intermediate_shape = [input_shape[0], input_shape[1]*upsample_rate[0], input_shape[2], input_shape[3]]
+    output_shape = [input_shape[0], input_shape[1]*upsample_rate[0], input_shape[2]*upsample_rate[1], input_shape[3]]
+    
+    x = tf.reshape(tf.concat([x[:, :, np.newaxis, :, :]]*upsample_rate[0], axis=2), intermediate_shape)
+    return tf.reshape(tf.concat([x[:, :, :, np.newaxis, :]]*upsample_rate[1], axis=3), output_shape)
 
 def Logit(x):
     # return tf.math.log(1e-7+x)-tf.math.log(1e-7+1-x)
@@ -241,43 +248,7 @@ def LeakyReLU(x, alpha=0.2):
 def tf_average_n(list_of_tensors):
     return tf_compat_v1.add_n(list_of_tensors)/float(len(list_of_tensors))
 
-def compute_embeddings(fit_tensor_list, n_fit_samples, mode='UMAP', n_components=2, verbose=True):
-    assert (mode == 'UMAP' or mode == 'T-SNE')
-    assert (n_components > 1)
-
-    if verbose: print('Preparing the data to be embedded.')
-    permuted_indeces = [np.random.permutation(np.arange(e.shape[0])) for e in fit_tensor_list]
-    chosen_indeces = [e[:n_fit_samples] for e in permuted_indeces]
-    permuted_indeces = None
-    gc.collect(); gc.collect()
-    chosen_samples = [e[chosen_indeces[i]] for i, e in enumerate(fit_tensor_list)]
-    chosen_samples_flat = [e.reshape([e.shape[0], -1]) for e in chosen_samples]
-    all_chosen_samples = np.concatenate(chosen_samples_flat, axis=0)
-    
-    all_permuted_indeces = np.random.permutation(np.arange(all_chosen_samples.shape[0]))
-    inverse_all_permuted_indeces = np.zeros((all_chosen_samples.shape[0],), dtype=int)
-    for ind, e in enumerate(all_permuted_indeces): inverse_all_permuted_indeces[e] = ind
-    all_chosen_samples_permuted = all_chosen_samples[all_permuted_indeces, :]
-
-    if verbose: print('Embedding the data using method: '+mode)
-    if mode == 'UMAP':
-        all_outputs_permuted = UMAP(n_components=n_components).fit_transform(all_chosen_samples_permuted)
-    elif mode == 'T-SNE':
-        all_outputs_permuted = TSNE(n_components=n_components).fit_transform(all_chosen_samples_permuted)
-    
-    if verbose: print('Normalizing the embedding results.')
-    all_outputs = all_outputs_permuted[inverse_all_permuted_indeces, :]
-    all_outputs_centered = all_outputs-np.mean(all_outputs, axis=0)[np.newaxis, :]
-    all_outputs_normalized = all_outputs_centered/(np.std(all_outputs_centered, axis=0)[np.newaxis, :]+1e-7)
-
-    outputs = []
-    start_ind = 0
-    for i, e in enumerate(chosen_samples_flat):
-        outputs.append(all_outputs_normalized[start_ind:start_ind+e.shape[0], :])
-        start_ind = start_ind+e.shape[0]
-
-    return outputs, chosen_indeces
-
+#Attribute dict defintion to enable easy optimization, especially if different tensors need to be weighted differently
 class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
@@ -346,6 +317,7 @@ class AccumAttrDict():
 def get_kth_dim_slice_np(dim, start_n, stop_n=None, step_n=None):
     return (slice(None),)*dim+(slice(start_n, stop_n, step_n),)
 
+#interleaving used for visualizations
 def interleave_tensors(list_of_tensors, interleave_dim=0):
     assert (len(list_of_tensors) > 0)
     assert (all([e.shape == list_of_tensors[0].shape for e in list_of_tensors]))
@@ -381,6 +353,7 @@ def report_memory(sess, memory_node):
     else:
         return ' | Overall: '+report_instance_memory()+' | Process: '+report_process_memory()
 
+#computes gradients for a device
 def set_grads_and_vars_for_device(grads_and_vars_all_groups_all_devs, optimized_vars, device_name, computations, optimizers_dict, global_step, optimization_args):
     for group in computations[device_name].objective_dict:
         if group not in optimized_vars: 
@@ -390,22 +363,8 @@ def set_grads_and_vars_for_device(grads_and_vars_all_groups_all_devs, optimized_
             mode=optimization_args[group].optimizer_class, optimizer=optimizers_dict[group], loss=computations[device_name].objective_dict[group], 
             var_list=optimized_vars[group], global_step=global_step, clip_param=optimization_args[group].gradient_clipping)
 
+#Session.run() wrapper
 def sess_run_tf(session, input, feed_dict=None):
-    """Wrapper for making Session.run() more user friendly.
-
-    With this function, input can be either a list or a dictionary.
-
-    If input is a list, this function will behave like
-    tf.session.run() and return a list in the same order as well. If
-    input is a dict then this function will also return a dict where
-    the returned values are associated with the corresponding keys from
-    the input dict.
-
-    Keyword arguments:
-    session -- An open TensorFlow session.
-    input -- A list or dict of ops to fetch.
-    feed_dict -- The dict of values to feed to the computation graph.
-    """
     if hasattr(input, 'keys') and callable(getattr(input, 'keys')) and \
        hasattr(input, 'values') and callable(getattr(input, 'values')):
         keys, values = input.keys(), list(input.values())
@@ -420,24 +379,7 @@ def sess_run_tf(session, input, feed_dict=None):
         else:
             return session.run(input, feed_dict)
 
-
-def truncated_gaussian_sampler_np(shape, mu=0, std=1, lower=None, upper=None):
-    if upper is None: upper = 2*std
-    if lower is None: lower = -2*std
-
-    X = np.zeros(shape, dtype=np.float32)
-    X_flattened = np.reshape(X, X.size)
-    
-    i = 0
-    while i < len(X_flattened):
-        x = np.random.normal(loc=mu, scale=std)
-        if lower <= x - mu <= upper:
-            X_flattened[i] = x
-            i += 1
-
-    X = np.reshape(X_flattened, shape)
-    return X
-
+#deep copy for a batch dict
 def tf_replicate_batch_dict(batch_np_example, device_names, batch_size):
     batch_tf = {'all_devices': {}, 'per_device': {}}
     for key in batch_np_example:
@@ -460,44 +402,4 @@ def tf_replicate_batch_dict(batch_np_example, device_names, batch_size):
         return feed_dict
 
     return batch_tf, feed_dict_func
-
-# def merge_dicts(dict_list, deep=True):
-#     merged_dict = {}
-#     for dicti in (dict_list):
-#         for key in dicti.keys():
-#             merged_dict[key] = dicti[key]
-#     return merged_dict
-
-#     # if deep:
-#     #     z = copy.deepcopy(x)   # start with x's keys and values
-#     # else:        
-#     #     z = x.copy()   # start with x's keys and values
-#     # z.update(y)    # modifies z with y's keys and values & returns None
-#     # return z
-
-def get_residual_block(block_nm, num_channels, input_node_nm, mode='TRANSPOSE'):
-    assert (mode == 'TRANSPOSE' or mode == 'PADDING')
-    
-    if mode == 'TRANSPOSE':
-        return [
-            ([input_node_nm], block_nm + '_layer_1', 'Convolution', {'n_out_channels': num_channels, 'kernel_shape': [3, 3], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': True, 'initializer_mode': 'gaussian', 'force_no_matmul': False}),
-            ([block_nm + '_layer_1'], block_nm + '_layer_2', 'BatchNorm', {'mode': 'Regular'}),
-            ([block_nm + '_layer_2'], block_nm + '_layer_3', 'ElementwiseApply', {'func': tf.nn.relu}),
-            ([block_nm + '_layer_3'], block_nm + '_layer_4', 'TransposedConvolution', {'n_out_channels': num_channels, 'kernel_shape': [3, 3], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': False, 'initializer_mode': 'gaussian', 'force_no_matmul': False}),
-            ([block_nm + '_layer_4'], block_nm + '_layer_5', 'BatchNorm', {'mode': 'Regular'}),
-            ([input_node_nm, block_nm + '_layer_5'], block_nm + '_layer_6', 'Reduce', {'mode': 'Sum'}),
-            ([block_nm + '_layer_6'], block_nm + '_layer_7', 'ElementwiseApply', {'func': tf.nn.relu}),        
-        ]
-    else:
-        return [
-            ([input_node_nm], block_nm + '_layer_1', 'Convolution', {'n_out_channels': num_channels, 'kernel_shape': [3, 3], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': True, 'initializer_mode': 'gaussian', 'force_no_matmul': False, 'padding_mode': 'SAME'}),
-            ([block_nm + '_layer_1'], block_nm + '_layer_2', 'BatchNorm', {'mode': 'Regular'}),
-            ([block_nm + '_layer_2'], block_nm + '_layer_3', 'ElementwiseApply', {'func': tf.nn.relu}),
-            ([block_nm + '_layer_3'], block_nm + '_layer_4', 'Convolution', {'n_out_channels': num_channels, 'kernel_shape': [3, 3], 'strides': [1, 1], 'dilations': [1, 1], 'use_bias': True, 'initializer_mode': 'gaussian', 'force_no_matmul': False, 'padding_mode': 'SAME'}),
-            ([block_nm + '_layer_4'], block_nm + '_layer_5', 'BatchNorm', {'mode': 'Regular'}),
-            ([input_node_nm, block_nm + '_layer_5'], block_nm + '_layer_6', 'Reduce', {'mode': 'Sum'}),
-            ([block_nm + '_layer_6'], block_nm + '_layer_7', 'ElementwiseApply', {'func': tf.nn.relu}),        
-        ]
-
-
 
