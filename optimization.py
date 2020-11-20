@@ -1,3 +1,5 @@
+#contains all utility functions required for optimization
+
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
@@ -16,13 +18,14 @@ else:
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import gen_nn_ops
 
-
+#gradient clipping
 def clip_grad(grad, clip_param, mode='element'):
     if mode == 'norm':
         return tf.clip_by_norm(x, clip_param)
     elif mode == 'element':
         return tf.clip_by_value(grad, -clip_param, clip_param)
 
+#parameter clipping
 def clip_parameters(vars_list, clip_min_val=-0.01, clip_max_val=0.01):
     if len(vars_list) > 0:
         # vars_list_flat_concat = tf.concat([tf.reshape(e, [-1]) for e in vars_list], axis=0)
@@ -32,6 +35,7 @@ def clip_parameters(vars_list, clip_min_val=-0.01, clip_max_val=0.01):
         #pdb.set_trace()
     return vars_list, clip_op_list
 
+#gradient averaging
 def average_gradients(grad_var_dict):
     if type(grad_var_dict) is list:
         grad_var_dict_values = grad_var_dict
@@ -55,78 +59,7 @@ def average_gradients(grad_var_dict):
             all_average_grad_and_var.append(average_grad_and_var)
     return all_average_grad_and_var
 
-# Binary stochastic neuron with straight through estimator
-# https://r2rt.com/binary-stochastic-neurons-in-tensorflow.html
-def binaryRound(x):
-    """
-    Rounds a tensor whose values are in [0,1] to a tensor with values in {0, 1},
-    using the straight through estimator for the gradient.
-    """
-    g = tf.get_default_graph()
-
-    with ops.name_scope("BinaryRound") as name:
-        with g.gradient_override_map({"Round": "Identity"}):
-            return tf.round(x, name=name) 
-
-        # For Tensorflow v0.11 and below use:
-        #with g.gradient_override_map({"Floor": "Identity"}):
-        #    return tf.round(x, name=name)
-
-def bernoulliSample(x):
-    """
-    Uses a tensor whose values are in [0,1] to sample a tensor with values in {0, 1},
-    using the straight through estimator for the gradient.
-
-    E.g.,:
-    if x is 0.6, bernoulliSample(x) will be 1 with probability 0.6, and 0 otherwise,
-    and the gradient will be pass-through (identity).
-    """
-    g = tf.get_default_graph()
-
-    with ops.name_scope("BernoulliSample") as name:
-        with g.gradient_override_map({"Ceil": "Identity","Sub": "BernoulliSample_ST"}):
-            return tf.ceil(x - tf.random_uniform(tf.shape(x)), name=name)
-
-@ops.RegisterGradient("BernoulliSample_ST")
-def bernoulliSample_ST(op, grad):
-    return [grad, tf.zeros(tf.shape(op.inputs[1]))]
-
-def passThroughSigmoid(x, slope=1):
-    """Sigmoid that uses identity function as its gradient"""
-    g = tf.get_default_graph()
-    with ops.name_scope("PassThroughSigmoid") as name:
-        with g.gradient_override_map({"Sigmoid": "Identity"}):
-            return tf.sigmoid(x, name=name)
-
-def binaryStochastic_ST(x, slope_tensor=None, pass_through=False, stochastic=False):
-    """
-    Sigmoid followed by either a random sample from a bernoulli distribution according
-    to the result (binary stochastic neuron) (default), or a sigmoid followed by a binary
-    step function (if stochastic == False). Uses the straight through estimator.
-    See https://arxiv.org/abs/1308.3432.
-
-    Arguments:
-    * x: the pre-activation / logit tensor
-    * slope_tensor: if passThrough==False, slope adjusts the slope of the sigmoid function
-        for purposes of the Slope Annealing Trick (see http://arxiv.org/abs/1609.01704)
-    * pass_through: if True (default), gradient of the entire function is 1 or 0;
-        if False, gradient of 1 is scaled by the gradient of the sigmoid (required if
-        Slope Annealing Trick is used)
-    * stochastic: binary stochastic neuron if True (default), or step function if False
-    """
-    if slope_tensor is None:
-        slope_tensor = tf.constant(1.0)
-
-    if pass_through:
-        p = passThroughSigmoid(x)
-    else:
-        p = tf.sigmoid(slope_tensor*x)
-
-    if stochastic:
-        return bernoulliSample(p)
-    else:
-        return binaryRound(p) # if x>=9e-8 then return 1 else 0
-
+#performs minimization using the given optimizer and loss
 # Values for gate_gradients.
 GATE_NONE = 0
 GATE_OP = 1
@@ -159,13 +92,6 @@ def clipped_optimizer_minimize(mode, optimizer, loss, global_step=None, var_list
     elif mode == 'SGLD':
         optimizer.iterations = global_step
 
-        # dummy_optimizer = tf.train.AdamOptimizer(learning_rate=1, beta1=0.9999, beta2=0.99999, epsilon=1e-08)
-        # grads_and_vars = dummy_optimizer.compute_gradients(
-        #     loss, var_list=var_list, gate_gradients=gate_gradients,
-        #     aggregation_method=aggregation_method,
-        #     colocate_gradients_with_ops=colocate_gradients_with_ops,
-        #     grad_loss=grad_loss)
-
         grads = tf.gradients(loss, var_list)
         grads_and_vars = zip(grads, var_list)
         if clip_param is not None and clip_param > 0:
@@ -183,6 +109,7 @@ def clipped_optimizer_minimize(mode, optimizer, loss, global_step=None, var_list
 
         return clipped_grads_and_vars
         
+#optimizer wrapper
 def get_optimizer(epoch_step, optimizer_class, learning_rate, learning_rate_decay_rate, beta1, beta2, epsilon, max_epochs):
     if optimizer_class == 'Adam':
         return tf_compat_v1.train.AdamOptimizer(learning_rate=learning_rate, beta1=beta1, beta2=beta2, epsilon=1e-08)    
@@ -197,7 +124,7 @@ def get_optimizer(epoch_step, optimizer_class, learning_rate, learning_rate_deca
                              decay_steps=max_epochs-1, end_learning_rate=learning_rate*learning_rate_decay_rate, power=2.)
         return tfp.optimizer.StochasticGradientLangevinDynamics(learning_rate=curr_learning_rate, preconditioner_decay_rate=beta2)
 
-
+#schedules optimization based on a frequency dict if different networks in a model need to be optimized at different frequencies (such as in wGAN)
 class OptimizationScheduler():
     def __init__(self, opt_freq_dict, registry_list, mode='First', verbose=False):
         self.opt_freq_dict = opt_freq_dict
@@ -257,33 +184,3 @@ class OptimizationScheduler():
     def get_scheduled_registered_dict(self, i):
         self.phase = i % self.period
         return self.registered_opt_dict_list[self.phase]
-
-def _old_optimization_scheduler(iter_num, opt_freq_dict, mode='First'):
-    assert (mode == 'First' or mode == 'Last' or mode == 'Spaced')
-    assert (iter_num >= 0)
-    
-    iter_num += 1
-    k = list(opt_freq_dict.keys())
-    v = list(opt_freq_dict.values())
-
-    max_value = max(v)
-    max_key = k[v.index(max_value)] 
-    
-    opt_include_dict = dict()
-    opt_include_dict[max_key] = True
-
-    k.remove(max_key)
-
-    for key in k:
-        mod_iter = iter_num % max_value
-        if mode == 'First':
-            opt_include_dict[key] = 1 <= mod_iter <= opt_freq_dict[key]
-        elif mode == 'Last':
-            opt_include_dict[key] = mod_iter == 0 or mod_iter >= max_value - opt_freq_dict[key] + 1
-        else:
-            include_set = set([1])
-            for i in range(1, opt_freq_dict[key]):
-                include_set.add((int(i * (max_value - 1) / (opt_freq_dict[key] - 1)) + 1) % max_value)
-            opt_include_dict[key] = mod_iter in include_set
-
-    return opt_include_dict
