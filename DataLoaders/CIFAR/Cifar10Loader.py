@@ -1,3 +1,4 @@
+#data loader class which downloads CIFAR 10, stores as h5, and uses buffering system for training / testing
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
@@ -19,6 +20,7 @@ import numpy as np
 np.set_printoptions(suppress=True)
 
 class DataLoader:
+    #load the h5 using the given batch size
     def __init__(self, batch_size):
         self.dataset_name = 'Cifar10'
         self.batch_size = batch_size
@@ -29,6 +31,7 @@ class DataLoader:
         except: self.create_h5(); self.load_h5()
         self.setup('Training')
 
+    #load h5 and get train/test images and train/test labels
     def load_h5(self):
         processed_file_path = self.dataset_dir + 'cifar10.h5'
         print('Loading from h5 file: '+ processed_file_path)
@@ -53,11 +56,13 @@ class DataLoader:
 
         self.label_size = [-1] + list(self.training_labels.shape[1:])
         
+    #create h5 if it does not already exist
     def create_h5(self):
         print('Loading from h5 file failed. Creating h5 file from data sources.')
         if not os.path.exists(self.dataset_dir): os.makedirs(self.dataset_dir)
         cifar10_image_size = [-1, 3, 32, 32]
  
+        #download tar file, extract, and process data in raw chunks
         wget.download('http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz', self.dataset_dir)
         tarfile_object = tarfile.open(self.dataset_dir + 'cifar-10-python.tar.gz')
         tarfile_object.extractall(self.dataset_dir)
@@ -83,6 +88,8 @@ class DataLoader:
         os.rmdir(self.dataset_dir + 'cifar-10-batches-py/')
 
         class_names = metadata_dict[b'label_names']
+        
+        #aggregate training images
         training_images, training_filenames = None, None
         for i in range(len(training_chunks)):
             if training_images is None: training_images = training_chunks[i][b'data'].reshape(cifar10_image_size)
@@ -90,6 +97,7 @@ class DataLoader:
             if training_filenames is None: training_filenames = np.asarray([e.decode("utf-8") for e in training_chunks[i][b'filenames']])
             else: training_filenames = np.concatenate([training_filenames, np.asarray([e.decode("utf-8") for e in training_chunks[i][b'filenames']])], axis=0)
 
+        #aggregate training labels
         training_labels = np.zeros([training_images.shape[0], len(class_names)], np.bool)
         start_ind = 0
         for i in range(len(training_chunks)):
@@ -97,6 +105,7 @@ class DataLoader:
                 training_labels[start_ind+j, training_chunks[i][b'labels'][j]] = True
             start_ind += len(training_chunks[i][b'labels'])
                 
+        #aggregate testing images and labels
         test_images = test_chunks[0][b'data'].reshape(cifar10_image_size)
         test_filenames = np.asarray([e.decode("utf-8") for e in test_chunks[0][b'filenames']])
         test_labels = np.zeros([test_images.shape[0], len(class_names)], np.bool)
@@ -140,6 +149,7 @@ class DataLoader:
         assert (stage == 'Training' or stage == 'Test')
         self.stage = stage
 
+        #return train/test batches, randomize data as needed
         if self.stage == 'Training':
             self.curr_data_order = np.arange(len(self.training_images))
             if randomized: self.curr_data_order=np.random.permutation(self.curr_data_order)
@@ -163,6 +173,7 @@ class DataLoader:
     def __iter__(self):
         return self
     
+    #return subsequent train/test batch
     def __next__(self):
         if self.iter == self.curr_max_iter: raise StopIteration
 
