@@ -1,3 +1,6 @@
+#utility class containing f-divergence objects that each include generator func, conjugate func, and codomain func as needed for variational divergence 
+#estimation in fGAN (https://arxiv.org/abs/1606.00709.pdf)
+
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
