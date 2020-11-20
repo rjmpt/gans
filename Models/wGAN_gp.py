@@ -72,6 +72,7 @@ class Model():
             computation.latent_prior_dist_params = tf.concat([tf.zeros([computation.batch_size_tf, self.config.latent_dim], tf.float32), 
                                                               tf.ones([computation.batch_size_tf, 1], tf.float32)], axis=1)
 
+ 
         computation.latent_prior_dist = self.latent_prior_dist_class(params=computation.latent_prior_dist_params, shape=[computation.batch_size_tf, self.config['latent_dim']]) 
         computation.latent_prior_sample = computation.latent_prior_dist.sample()
         
@@ -80,9 +81,13 @@ class Model():
         computation.alpha = tf.random.uniform(shape=[computation.batch_size_tf, 1, 1, 1], minval=0., maxval=1.)
         computation.interpolated_sample = computation.alpha * computation.input_images + (1-computation.alpha) * computation.transformed_sample_training
         
+        self.generator_dnn.set_stage('Test')
+        computation.transformed_sample = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :]) #used for visualizations
+
         #run the generated image and real image through discriminator
         computation.critique_transformed_sample_training = self.critic_dnn.forward(computation.transformed_sample_training)[:, 0, 0, :]
-        computation.critique_real_sample = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :]
+        computation.critique_transformed_sample = self.critic_dnn.forward(computation.transformed_sample)[:, 0, 0, :] #used for visualizations
+        computation.critique_real_sample = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :] 
 
         #vanilla GAN loss
         if self.config.mode == 'Regular':
