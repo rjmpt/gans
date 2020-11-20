@@ -17,7 +17,7 @@ import DNN
 import helper
 
 class Model():
-    #model initialization
+    #model initialization (discriminator and generator network setup, visualization setup)
     def __init__(self, global_args=None, config=None, name='VanillaGAN'):
         self.global_args = global_args
         self.config = config
