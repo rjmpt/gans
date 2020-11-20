@@ -8,7 +8,7 @@ This repository contains all the code used in this project. Please refer to the 
 • InceptionScore.py: script for computing inception score, adapted from https://github.com/taki0112/GAN_Metrics-Tensorflow/blob/master/main.py \
 • DataLoaders/: contains the DataLoader class used to process CIFAR 10 train / test batches from .h5 file on disk \
 • architectures.py: contains proto architectures for DCGAN based on different image input sizes \
-• DNN.py: core library file which contains custom layer implementations and implementation of DNN class, which corresponds to a directed acylic graph (DAG) of layers \
+• DNN.py: core library file which contains custom layer implementations and implementation of DNN class, which corresponds to a directed acylic graph (DAG) of layers
 
 • optimization.py: core optimization functionality for training \
 • visualizations.py: all code related to model visualizations \
