@@ -99,16 +99,7 @@ def write_data_text(data_file_path, temporal_dict, data_combinations):
 
 #obtains the data loader for the dataset being used in the experiment
 def get_data_loader(global_args):
-    #########################  MNIST  #######################################
-
-    if global_args.dataset_name == 'MNIST': 
-        from DataLoaders.MNIST.MNISTLoader import DataLoader  
-    elif global_args.dataset_name == 'ColorMNIST': 
-        from DataLoaders.MNIST.ColorMNISTLoader import DataLoader
-
-    #########################  CIFAR  #######################################
-
-    elif global_args.dataset_name == 'CIFAR10': 
+    if global_args.dataset_name == 'CIFAR10': 
         from DataLoaders.CIFAR.Cifar10Loader import DataLoader
 
     #################################################################################
