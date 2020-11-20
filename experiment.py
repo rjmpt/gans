@@ -38,7 +38,7 @@ parser.add_argument('--main_experiments_dir', type=str, default=str(Path.home())
 parser.add_argument('--experiment_group', type=str, default='671_final_proj', help="Experiment group.")
 
 
-parser.add_argument('--restore_dir', type=str, default='/home/adi/hdd3/Experiments/671_final_proj/wGAN_gp-DCGAN/CIFAR10/1a5b8efc0c0b405994d4bde69d51bce8/', help="Restore model directory.")
+parser.add_argument('--restore_dir', type=str, default='', help="Restore model directory.")
 parser.add_argument('--restore', type=bool, default=False, help="Restore checkpoint?.")
 parser.add_argument('--seed', type=int, default=31232, help="Random seed.")
 parser.add_argument('--max_batches_per_epoch', type=int, default=10000, help="Maximum number of batches to include in 1 epoch.")
