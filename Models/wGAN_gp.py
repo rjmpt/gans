@@ -89,7 +89,7 @@ class Model():
         computation.critique_transformed_sample = self.critic_dnn.forward(computation.transformed_sample)[:, 0, 0, :] #used for visualizations
         computation.critique_real_sample = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :] 
 
-        #vanilla GAN loss
+        #vanilla GAN loss without the log terms
         if self.config.mode == 'Regular':
             computation.generator_objective = -tf.reduce_mean(computation.critique_transformed_sample_training)
             computation.critic_objective = -tf.reduce_mean(computation.critique_real_sample) - computation.generator_objective 
