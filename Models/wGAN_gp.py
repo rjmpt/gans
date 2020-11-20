@@ -17,6 +17,7 @@ import DNN
 import helper
 
 class Model():
+    #model initialization
     def __init__(self, global_args=None, config=None, name='VanillaGAN'):
         self.global_args = global_args
         self.config = config
@@ -25,7 +26,7 @@ class Model():
         assert (self.config.mode == 'Regular' or self.config.mode == 'Alternate')
         if self.global_args.dataset_name == 'CIFAR10': 
             image_size, n_image_channels = [32, 32], 3
-      
+     
         self.generator_dnn = DNN.DNN(proto_structure_list = self.config.architecture_function(type='Generator', image_size=image_size, n_out_channels=n_image_channels), name='Generator')
         self.generator_dnn.get_network_activation_sizes([1, 1], verbose=3)
         assert (self.generator_dnn.output_size_for_input_size([1, 1]) == image_size)
@@ -34,7 +35,7 @@ class Model():
         self.critic_dnn.get_network_activation_sizes(image_size, verbose=3)
         assert (self.critic_dnn.output_size_for_input_size(image_size) == [1, 1])
 
-        self.latent_prior_dist_class = self.config.latent_prior_dist_class
+        self.latent_prior_dist_class = self.config.latent_prior_dist_class #set to gaussian
 
         self.visualizations = {
                                'Training Images': {'variables': ['input_images'], 'pipeline': 'Image Matrix', 'args': {'data_mode': 'Training', 'sample_spec': 64}},
@@ -54,11 +55,13 @@ class Model():
         else: print('Model computations for this device are already executed. Aborting.'); quit()
         return computation
     
+    #this is where the feedforward inference actually occurs
     def inference(self, input_dict, device_name=None):
         computation = self.get_computation(device_name)
         computation.input_images = input_dict['Image']
         computation.batch_size_tf = tf.shape(computation.input_images)[0]
         
+        #use the appropriate latent prior as the experiment args specify
         if self.latent_prior_dist_class.__name__ == 'DiagonalGaussianDistribution':
             computation.latent_prior_dist_params = tf.concat([tf.zeros([computation.batch_size_tf, self.config.latent_dim], tf.float32), 
                                                               tf.zeros([computation.batch_size_tf, self.config.latent_dim], tf.float32)], axis=1) 
@@ -72,38 +75,29 @@ class Model():
         computation.latent_prior_dist = self.latent_prior_dist_class(params=computation.latent_prior_dist_params, shape=[computation.batch_size_tf, self.config['latent_dim']]) 
         computation.latent_prior_sample = computation.latent_prior_dist.sample()
         
+        #get the generated sample and interpolate it with a real image
         computation.transformed_sample_training = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :])
         computation.alpha = tf.random.uniform(shape=[computation.batch_size_tf, 1, 1, 1], minval=0., maxval=1.)
         computation.interpolated_sample = computation.alpha * computation.input_images + (1-computation.alpha) * computation.transformed_sample_training
         
-        self.generator_dnn.set_stage('Test')
-        computation.transformed_sample = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :])
+        #run the generated image and real image through discriminator
+        computation.critique_transformed_sample_training = self.critic_dnn.forward(computation.transformed_sample_training)[:, 0, 0, :]
+        computation.critique_real_sample = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :]
 
-        computation.critique_transformed_sample_training_R = self.critic_dnn.forward(computation.transformed_sample_training)[:, 0, 0, :]
-        computation.critique_transformed_sample_R = self.critic_dnn.forward(computation.transformed_sample)[:, 0, 0, :]
-        computation.critique_real_sample_R = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :]
-
-        computation.critique_transformed_sample_training = computation.critique_transformed_sample_training_R
-        computation.critique_transformed_sample = computation.critique_transformed_sample_R
-        computation.critique_real_sample = computation.critique_real_sample_R
-
+        #vanilla GAN loss
         if self.config.mode == 'Regular':
             computation.generator_objective = -tf.reduce_mean(computation.critique_transformed_sample_training)
             computation.critic_objective = -tf.reduce_mean(computation.critique_real_sample) - computation.generator_objective 
-        elif self.config.mode == 'Alternate':
+        elif self.config.mode == 'Alternate': # "non-saturating" generator objective
             computation.generator_objective = -tf.reduce_mean(computation.critique_transformed_sample_training)
             computation.critic_objective = -tf.reduce_mean(computation.critique_real_sample) + tf.reduce_mean(computation.critique_transformed_sample_training)
 
-        #add gradient penalty to critic loss
+        #add gradient penalty to critic loss using the hyperparameter lambda_gp
         computation.gradients = tf.gradients(self.critic_dnn.forward(computation.interpolated_sample)[:, 0, 0, :], [computation.interpolated_sample])[0]
         computation.gradient_penalty = tf.reduce_mean((tf.norm(computation.gradients, ord='euclidean')-1.)**2)
-        
         computation.critic_objective = computation.critic_objective + self.config.lambda_gp * computation.gradient_penalty
 
         computation.objective_dict = {
                                       'Generator': computation.generator_objective, 
                                       'Critic': computation.critic_objective,
                                      }
-
-
-        
