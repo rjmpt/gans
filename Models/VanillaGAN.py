@@ -17,17 +17,14 @@ import DNN
 import helper
 
 class Model():
+    #model initialization (discriminator and generator network setup, visualization setup)
     def __init__(self, global_args=None, config=None, name='VanillaGAN'):
         self.global_args = global_args
         self.config = config
         self.name = name
         self.computations = {}
         assert (self.config.mode == 'Regular' or self.config.mode == 'Alternate')
-        if self.global_args.dataset_name == 'MNIST':
-            image_size, n_image_channels = [28, 28], 1
-        elif self.global_args.dataset_name == 'ColorMNIST': 
-            image_size, n_image_channels = [28, 28], 3
-        elif self.global_args.dataset_name == 'CIFAR10': 
+        if self.global_args.dataset_name == 'CIFAR10': 
             image_size, n_image_channels = [32, 32], 3
       
         self.generator_dnn = DNN.DNN(proto_structure_list = self.config.architecture_function(type='Generator', image_size=image_size, n_out_channels=n_image_channels), name='Generator')
@@ -58,11 +55,13 @@ class Model():
         else: print('Model computations for this device are already executed. Aborting.'); quit()
         return computation
     
+    #this is where the feedforward inference actually occurs
     def inference(self, input_dict, device_name=None):
         computation = self.get_computation(device_name)
         computation.input_images = input_dict['Image']
         computation.batch_size_tf = tf.shape(computation.input_images)[0]
         
+        #use the appropriate latent prior as the experiment args specify
         if self.latent_prior_dist_class.__name__ == 'DiagonalGaussianDistribution':
             computation.latent_prior_dist_params = tf.concat([tf.zeros([computation.batch_size_tf, self.config.latent_dim], tf.float32), 
                                                               tf.zeros([computation.batch_size_tf, self.config.latent_dim], tf.float32)], axis=1) 
@@ -76,22 +75,23 @@ class Model():
         computation.latent_prior_dist = self.latent_prior_dist_class(params=computation.latent_prior_dist_params, shape=[computation.batch_size_tf, self.config['latent_dim']]) 
         computation.latent_prior_sample = computation.latent_prior_dist.sample()
         
+        #pass latent vector through generator
         computation.transformed_sample_training = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :])
         self.generator_dnn.set_stage('Test')
-        computation.transformed_sample = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :])
+        computation.transformed_sample = self.generator_dnn.forward(computation.latent_prior_sample[:, np.newaxis, np.newaxis, :]) #used for visualizations
 
         computation.critique_transformed_sample_training_R = self.critic_dnn.forward(computation.transformed_sample_training)[:, 0, 0, :]
-        computation.critique_transformed_sample_R = self.critic_dnn.forward(computation.transformed_sample)[:, 0, 0, :]
+        computation.critique_transformed_sample_R = self.critic_dnn.forward(computation.transformed_sample)[:, 0, 0, :] #used for visualizations
         computation.critique_real_sample_R = self.critic_dnn.forward(computation.input_images)[:, 0, 0, :]
 
         computation.critique_transformed_sample_training = tf.nn.sigmoid(computation.critique_transformed_sample_training_R)
-        computation.critique_transformed_sample = tf.nn.sigmoid(computation.critique_transformed_sample_R)
+        computation.critique_transformed_sample = tf.nn.sigmoid(computation.critique_transformed_sample_R) #used for visualizations
         computation.critique_real_sample = tf.nn.sigmoid(computation.critique_real_sample_R)
 
         if self.config.mode == 'Regular':
             computation.generator_objective = tf.reduce_mean(helper.tf_safe_log(1-computation.critique_transformed_sample_training))
             computation.critic_objective = -tf.reduce_mean(helper.tf_safe_log(computation.critique_real_sample))-computation.generator_objective 
-        elif self.config.mode == 'Alternate':
+        elif self.config.mode == 'Alternate': # "non-saturating" generator objective
             computation.generator_objective = -tf.reduce_mean(helper.tf_safe_log(computation.critique_transformed_sample_training))
             computation.critic_objective = -tf.reduce_mean(helper.tf_safe_log(computation.critique_real_sample))-tf.reduce_mean(helper.tf_safe_log(1-computation.critique_transformed_sample_training))
 
