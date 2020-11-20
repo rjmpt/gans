@@ -23,11 +23,7 @@ class Model():
         self.name = name
         self.computations = {}
         assert (self.config.mode == 'Regular' or self.config.mode == 'Alternate')
-        if self.global_args.dataset_name == 'MNIST':
-            image_size, n_image_channels = [28, 28], 1
-        elif self.global_args.dataset_name == 'ColorMNIST': 
-            image_size, n_image_channels = [28, 28], 3
-        elif self.global_args.dataset_name == 'CIFAR10': 
+        if self.global_args.dataset_name == 'CIFAR10': 
             image_size, n_image_channels = [32, 32], 3
       
         self.generator_dnn = DNN.DNN(proto_structure_list = self.config.architecture_function(type='Generator', image_size=image_size, n_out_channels=n_image_channels), name='Generator')
