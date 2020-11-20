@@ -1,3 +1,8 @@
+#this file contains custom low level layer definitons that I use in all my networks
+#this file also contains functionality for building DNN objects from these custom layer definitions using proto architecture definitions as is done in architectures.py
+#finally, there is extensive logging functionality that I have built in to this class in order to make creating new architectures fast and straightforward
+#every layer has an __init__() method which is used to initially construct it, and then a forward() method in which an input tensor x is passed through the layer
+
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
@@ -14,6 +19,7 @@ else:
 
 import helper
 
+#superclass for all the various layers
 class NNComponent():
     def __init__(self, stage='Training', name='NNComponent', tags=[]):
         assert (stage == 'Training' or stage == 'Test')
@@ -79,7 +85,7 @@ class NNComponent():
             output_size.append(int(np.floor(float(multiply_number*input_size[i]+add_number)/float(divide_number))))
         return output_size
 
-
+#enables a single bias term for convolutional layers
 class InputFreeBias(NNComponent):
     def __init__(self, variable_shape, stage='Training', initializer_mode='Zeros', name='input_free_bias', tags=[]):
         super().__init__(stage, name, tags)
@@ -102,7 +108,7 @@ class InputFreeBias(NNComponent):
         if self.bias is None: self.initialize()
         return self.weight_bias
 
-
+#handles mean reduce, sum reduce, product reduce, and concatenation
 class Reduce(NNComponent):
     def __init__(self, stage='Training',  mode='Sum', name='reduce', tags=[]):
         super().__init__(stage, name, tags)
@@ -123,7 +129,7 @@ class Reduce(NNComponent):
         if self.mode == 'Concat':
             return tf.concat(x, axis=-1)
 
-
+#element wise operations
 class ElementwiseApply(NNComponent):
     def __init__(self, stage='Training', func=None, name='elementwise_apply', tags=[]):
         super().__init__(stage, name, tags)
@@ -139,7 +145,7 @@ class ElementwiseApply(NNComponent):
 
         return out
 
-
+#perform a*x + b operation to all outputs of another layer
 class ConstantScaleShift(NNComponent):
     def __init__(self, stage='Training', scale=1., shift=0., name='constant_scale_shift', tags=[]):
         super().__init__(stage, name, tags)
@@ -155,7 +161,7 @@ class ConstantScaleShift(NNComponent):
             out = out+self.shift
         return out
 
-
+#spatial dropout, ensures that the correct operations happen during train/test
 class SpatialDropout(NNComponent):
     def __init__(self, stage='Training', dropout_rate=0.5, name='spatial_dropout', tags=[]):
         super().__init__(stage, name, tags)
@@ -172,7 +178,7 @@ class SpatialDropout(NNComponent):
             out = x
         return out
 
-
+#tensorflow equivalent of: https://pytorch.org/docs/stable/generated/torch.nn.PixelShuffle.html, useful when upsampling
 class PixelShuffle(NNComponent):
     def __init__(self, upsample_rate=[1,1], stage='Training', name='pixel_shuffle', tags=[]):
         super().__init__(stage, name, tags)
@@ -230,7 +236,7 @@ class PixelShuffle(NNComponent):
         slice_list += [current_slice]
         return tf.stack(slice_list, axis=3)
 
-
+#standard upsampling (nearest neighbor)
 class Upsample(NNComponent):
     def __init__(self, stage='Training', upsample_rate=[2, 2], mode='Nearest Neighbor', name='upsample', tags=[]):
         super().__init__(stage, name, tags)
@@ -249,7 +255,7 @@ class Upsample(NNComponent):
         if self.mode == 'Nearest Neighbor':
             return helper.tf_nn_upsample_tensor(x, upsample_rate=self.upsample_rate)
 
-
+#subsample activations based on the specified stride structure
 class Subsample(NNComponent):
     def __init__(self, subsample_structure=[(1, 1), (0, 0)], stage='Training', name='subsample', tags=[]):
         super().__init__(stage, name, tags)
@@ -272,7 +278,7 @@ class Subsample(NNComponent):
         
         return x_subsampled
 
-
+#crop using the specified crop structure [(top, bottom), (left, right)]
 class Crop(NNComponent):
     def __init__(self, crop_size_structure=[(1, 1), (1, 1)], stage='Training', name='crop', tags=[]):
         super().__init__(stage, name, tags)
@@ -304,7 +310,7 @@ class Crop(NNComponent):
         
         return x_cropped
 
-
+#standard pooling layer, superclass for Pooling layer which implements avg and max pooling
 class GeneralPooling(NNComponent):
     def __init__(self, stage='Training', kernel_shape=[2, 2], strides=[2, 2], dilations=[1, 1], force_explicit_crop=False, crop_mode='center', name='GeneralPooling', tags=[]):
         super().__init__(stage, name, tags)
@@ -363,7 +369,7 @@ class GeneralPooling(NNComponent):
     def explicit_crop(self, x):
         return Crop(self.crop_size_structure).forward(x)
 
-
+#avg and max pooling
 class Pooling(GeneralPooling):
     def __init__(self, stage='Training', kernel_shape=[2, 2], strides=[2, 2], dilations=[1, 1], pooling_type='MAX', force_explicit_crop=False, crop_mode='center', name='pooling', tags=[]):
         super().__init__(stage=stage, kernel_shape=kernel_shape, strides=strides, dilations=dilations, force_explicit_crop=force_explicit_crop, crop_mode=crop_mode, name=name, tags=tags)
@@ -380,7 +386,7 @@ class Pooling(GeneralPooling):
         out = tf.nn.pool(input=x, window_shape=self.kernel_shape, pooling_type=self.pooling_type, strides=self.strides, padding='VALID', data_format='NHWC', dilation_rate=self.dilations)
         return out
 
-
+#superclass for all convolution types
 class GeneralConvolution(GeneralPooling):
     def __init__(self, stage, initializer_mode, n_out_channels, kernel_shape, strides, dilations, force_explicit_crop, crop_mode, use_bias, force_no_matmul, name, tags):
         super().__init__(stage=stage, kernel_shape=kernel_shape, strides=strides, dilations=dilations, force_explicit_crop=force_explicit_crop, crop_mode=crop_mode, name=name, tags=tags)        
@@ -445,7 +451,7 @@ class GeneralConvolution(GeneralPooling):
             if self.use_bias: n_params += np.prod(self.weight_bias.get_shape().as_list())
             return n_params
 
-
+#typical convolutional layer, can handle any initialization modes, kernel shapes, strides, dilations
 class Convolution(GeneralConvolution):
     def __init__(self, stage='Training', initializer_mode='xavier_uniform', n_out_channels=32, kernel_shape=[3, 3], strides=[1, 1], dilations=[1, 1], use_bias=True, force_no_matmul=False, force_explicit_crop=False, crop_mode='center', padding_mode='VALID', name='convolution', tags=[]):
         super().__init__(stage, initializer_mode, n_out_channels, kernel_shape, strides, dilations, force_explicit_crop, crop_mode, use_bias, force_no_matmul, name, tags)
@@ -506,7 +512,7 @@ class Convolution(GeneralConvolution):
     
         return [(x_pad_left, x_pad-x_pad_left), (y_pad_top, y_pad-y_pad_top)]
     
-    
+#transposed convolutional layer for learned upsampling    
 class TransposedConvolution(GeneralConvolution):
     def __init__(self, stage='Training', initializer_mode='xavier_uniform', n_out_channels=32, kernel_shape=[3, 3], strides=[1, 1], dilations=[1, 1], use_bias=True, force_no_matmul=False, name='transposed_convolution', tags=[]):
         super().__init__(stage, initializer_mode, n_out_channels, kernel_shape, strides, dilations, 'False', 'center', use_bias, force_no_matmul, name, tags)
@@ -546,7 +552,7 @@ class TransposedConvolution(GeneralConvolution):
 
         return out
 
-
+#batchnorm layer
 class BatchNorm(NNComponent):
     def __init__(self, stage='Training', mode='Regular', exponential_decay=0.01, epsilon=0.001, d_max=5, r_max=3, name='batch_norm', tags=[]):
         super().__init__(stage, name, tags)
@@ -608,7 +614,7 @@ class BatchNorm(NNComponent):
             out = ((x - self.batch_acc_mu)/helper.safe_tf_sqrt(self.epsilon+self.batch_acc_var))*self.global_std+self.global_mu
         return out
 
-
+#used to construct DNN objects which are Directed Acyclic Graphs (DAGs) of the various NN Components
 class DNN():
     def __init__(self, structure_list=None, proto_structure_list=None, name='DNN'):
         self.name = name
