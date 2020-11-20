@@ -1,3 +1,5 @@
+#this is the primary file in which experiments are actually executed
+
 from __future__ import print_function
 from IPython.core.debugger import Pdb
 pdb = Pdb()
@@ -44,16 +46,17 @@ parser.add_argument('--max_epochs', type=int, default=200, help="Maximum number 
 parser.add_argument('--training_log_freq', type=int, default=10, help="Training log frequency (number of times per epoch).")
 parser.add_argument('--max_hyperparameter_epochs', type=int, default=0, help="Maximum number of epochs to run the hyperparameter optimization.")
 parser.add_argument('--algorithm_name', type=str, default='fGAN-Pearson-DCGAN', help="The name of the algorithm to experiment with.")
-# parser.add_argument('--algorithm_name', type=str, default='SimpleClassifier-PerformanceTest', help="The name of the algorithm to experiment with.")
 parser.add_argument('--dataset_name', type=str, default='CIFAR10', help="The name of the dataset to experiment with.")
 parser.add_argument('--gpu_ID_list', type=list, default=['0'], help="Options: [], ['0'], ['1'], ['0', '1'], ['1', '0']")
 
+#parse in all the experiment arguments
 global_args = parser.parse_args()
 global_args.temporal_dict = helper.AttrDict()
 global_args.temporal_dict.epoch = 0
 global_args.temporal_dict.hyperparameter_epoch = 0
 global_args.temporal_dict.data_epoch = 0
 
+#set up random seeds
 random.seed(global_args.seed)
 np.random.seed(global_args.seed)
 global_args.parameter_device_name, global_args.list_of_device_names = helper.get_device_names(global_args.gpu_ID_list)
@@ -61,15 +64,17 @@ if global_args.experiment_mode == 'Debug': tf.debugging.set_log_device_placement
 elif global_args.experiment_mode == 'Training' or global_args.experiment_mode == 'Deployment':
     global_args.exp_dir = helper.make_exp_dir(global_args)
 
+#get the model and hyperparameter details for the experiment
 Model, global_args.algorithm_args, global_args.optimization_args = helper.get_model_and_algorithm_optimization_args(global_args.algorithm_name)
 data_loader = helper.get_data_loader(global_args)
 _, _, example_batch = next(data_loader)
 
+#set up tf graph
 tf_graph = tf.Graph()
 visualizer = helper.AttrDict()
 with tf_graph.as_default():
     tf_compat_v1.set_random_seed(global_args.seed)
-    model = Model(global_args=global_args, config=global_args.algorithm_args)
+    model = Model(global_args=global_args, config=global_args.algorithm_args) #set up model
 
     with tf.device(global_args.parameter_device_name):
         tf_input_dict, feed_dict_func = helper.tf_replicate_batch_dict(example_batch, global_args.list_of_device_names, global_args.algorithm_args.batch_size)
@@ -79,6 +84,7 @@ with tf_graph.as_default():
         increment_global_step_op = tf_compat_v1.assign(global_step, global_step+1)
         increment_epoch_step_op = tf_compat_v1.assign(epoch_step, epoch_step+1)
 
+        #collect all the optimizers in a dictionary
         optimizers_dict = {}
         for group in global_args.optimization_args:
             group_args = global_args.optimization_args[group]
@@ -86,6 +92,7 @@ with tf_graph.as_default():
                 learning_rate=group_args.learning_rate, learning_rate_decay_rate=group_args.learning_rate_decay_rate, 
                 beta1=group_args.beta1, beta2=group_args.beta2, epsilon=group_args.epsilon, max_epochs=global_args.max_epochs)
 
+    #perform training across multiple GPUs or multiple CPU/GPU as specified
     grads_and_vars_all_groups_all_devs, optimized_vars = {}, {}
     for i, curr_device_name in enumerate(global_args.list_of_device_names):
         with tf.device(helper.assign_to_device(device_name=curr_device_name, parameter_device_name=global_args.parameter_device_name)):
@@ -93,13 +100,14 @@ with tf_graph.as_default():
             helper.set_grads_and_vars_for_device(grads_and_vars_all_groups_all_devs, optimized_vars, 
                 curr_device_name, model.computations, optimizers_dict, global_step, global_args.optimization_args)
             
-    with tf.device(global_args.parameter_device_name): ## AGGREGATION
+    #aggregate gradients and average them
+    with tf.device(global_args.parameter_device_name): 
         train_step_tf_dict, objective_tf_dict = {}, {}
         for group in grads_and_vars_all_groups_all_devs:
             train_step_tf_dict[group] = optimizers_dict[group].apply_gradients(optimization.average_gradients(grads_and_vars_all_groups_all_devs[group]))            
             objective_tf_dict[group] = helper.tf_average_n([model.computations[curr_device_name].objective_dict[group] for curr_device_name in model.computations])
         
-
+    #set things up to ensure automatic termination if we are running out of memory
     memory_node = None
     if len(global_args.gpu_ID_list) > 0: memory_node = tf.contrib.memory_stats.MaxBytesInUse()
     init = tf_compat_v1.global_variables_initializer()
@@ -107,7 +115,7 @@ with tf_graph.as_default():
     
     config = tf_compat_v1.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
-    sess = tf_compat_v1.Session(config=config) # tf_compat_v1.InteractiveSession() # Slower
+    sess = tf_compat_v1.Session(config=config)
     merged_summaries = tf_compat_v1.summary.merge_all()
     summary_writer = tf_compat_v1.summary.FileWriter(global_args.exp_dir+'summaries/', sess.graph)
     sess.run(init)
@@ -122,26 +130,31 @@ with tf_graph.as_default():
 def hyperparameter_training():
     return
 
+#automatically generate visualizations and save them all in the experiment directory
 def visualize_results():
     visualization.visualize_model(sess, model, data_loader, feed_dict_func, tf_graph, global_args.parameter_device_name, global_args.temporal_dict, global_args.exp_dir)
 
+#train the model!
 def model_training():
-    data_loader.setup('Training', randomized=True) #max_iter=global_args.max_batches_per_epoch)
+    data_loader.setup('Training', randomized=True) #data loader
 
+    #grab all the optimizers
     optimization_groups = list(train_step_tf_dict.keys())
     log_interval = int(np.floor(float(data_loader.curr_max_iter)/(float(global_args.training_log_freq))))
     acc_training_objectives = helper.AccumAttrDict(['Objective' + '_' + e for e in optimization_groups])
     optimization_scheduler = optimization.OptimizationScheduler(opt_freq_dict=global_args.algorithm_args.group_freq_dict,
         registry_list=[('Objective', objective_tf_dict), ('Step', train_step_tf_dict)], mode='Last', verbose=True)
 
+    #process all the batches
     for i, curr_batch_size, batch_np in data_loader: 
         t_start = time.time()
-        compute_dict = optimization_scheduler.get_scheduled_registered_dict(i)
+        compute_dict = optimization_scheduler.get_scheduled_registered_dict(i) #get computation dict corresponding to this batch
         results_dict = helper.sess_run_tf(sess, compute_dict, feed_dict=feed_dict_func(batch_np))
         acc_training_objectives.add_values(results_dict, weight_size_spec=curr_batch_size)
         sess.run(increment_global_step_op) 
         t_end = time.time()
 
+        #log as necessary
         if i % log_interval == 0:
             acc_results_dict = acc_training_objectives.normalize()
             print_str = ''
@@ -157,6 +170,7 @@ def model_training():
 
 print('\n\n\n\n\n\nStarting experiment:\n\n\n')
 
+#model inference / deployment
 if global_args.experiment_mode == 'Deployment':
     assert (global_args.restore)
     print('\n\n\nStarting deployment of a previously trained model.\n\n\n')
@@ -165,7 +179,9 @@ if global_args.experiment_mode == 'Deployment':
     print('=== Memory After visualize(): ' + helper.report_memory(sess, memory_node) + '\n\n')
     print('Finished deployment.')
 
+#training
 elif global_args.experiment_mode == 'Training':
+    #hyperparam optimization
     if global_args.max_hyperparameter_epochs > 0:
         print('\nStarting hyperparameter training.\n\n')  
         while global_args.temporal_dict.hyperparameter_epoch <= global_args.max_hyperparameter_epochs:
@@ -177,6 +193,7 @@ elif global_args.experiment_mode == 'Training':
 
     print('\nStarting model parameter training.\n\n')   
 
+    #model parameter training
     while global_args.temporal_dict.epoch <= global_args.max_epochs + 1:
         print('=== Memory usage at start of visualizing model: ' + helper.report_memory(sess, memory_node) + '\n\n')
         visualize_results()
