@@ -88,6 +88,7 @@ class Model():
         computation.critique_transformed_sample = tf.nn.sigmoid(computation.critique_transformed_sample_R) #used for visualizations
         computation.critique_real_sample = tf.nn.sigmoid(computation.critique_real_sample_R)
 
+        #vanilla GAN loss
         if self.config.mode == 'Regular':
             computation.generator_objective = tf.reduce_mean(helper.tf_safe_log(1-computation.critique_transformed_sample_training))
             computation.critic_objective = -tf.reduce_mean(helper.tf_safe_log(computation.critique_real_sample))-computation.generator_objective 
